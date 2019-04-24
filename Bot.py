@@ -4,6 +4,7 @@ from random import random
 from functools import reduce
 from taxcom_parser import get_items
 
+
 class Peer:
     def __init__(self, conv):
         self.id = conv["peer"]["id"]
@@ -43,7 +44,10 @@ class Bot:
                 question = "Что ты используешь?" if first else "\u2800",
                 is_multiple = 1,
                 add_answers = json.dumps(tuple(map(
-                    lambda x: "{0}) {1} {2}".format(x[0], ' '.join(x[1][0].split()[:2]), x[1][1]),
+                    lambda x: "{0}) {1} {2}".format(
+                        x[0],
+                        ' '.join(x[1][0].split()[:2]), x[1][1]
+                    ),
                     zip(range(i + 1, i + 11), receipt[i:i + 10])
                 )))
             ))
@@ -72,7 +76,8 @@ class Bot:
                 lm = x["last_message"]
                 p = Peer(conv)
                 for poll in polls:
-                    self.send_attachment(p,
+                    self.send_attachment(
+                        p,
                         "poll{owner_id}_{id}".format(**poll)
                     )
                 self.mark_as_read(p)
