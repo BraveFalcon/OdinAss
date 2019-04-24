@@ -12,6 +12,7 @@ class Peer:
 
 class Bot:
     v = "5.95"
+    DEFAULT_PATH = "Bot.data"
 
     def __init__(self, key):
         self.key = key
@@ -51,14 +52,15 @@ class Bot:
         self.as_community()
         return polls
 
-    def save(self):
-        with open("output.txt", "w") as file:
-            print(", ".join(str(i) for i in self.cached_polls), file=file)
+    def save(self, stream=None):
+        if stream is None:
+            stream = open(self.DEFAULT_PATH, "w")
+        print(", ".join(str(i) for i in self.cached_polls), file=stream)
 
-    def load(self):
-        with open("output.txt") as file:
-            for line in file:
-                self.cached_polls = map(int, line.split(', '))
+    def load(self, stream=None):
+        if stream is None:
+            stream = open(self.DEFAULT_PATH)
+        self.cached_polls = map(int, stream.readline().split(', '))
 
     def process_receipt(self, fn, sum):
         receipt = get_items(fn, sum)
