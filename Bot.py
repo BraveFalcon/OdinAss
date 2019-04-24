@@ -73,7 +73,7 @@ class Bot:
                     self.send_attachment(p,
                         "poll{owner_id}_{id}".format(**poll)
                     )
-                self.markAsRead(p)
+                self.mark_as_read(p)
         self.cached_polls = [poll["id"] for poll in polls]
 
     def get_answers(self):
@@ -93,15 +93,15 @@ class Bot:
             self.as_community()
             return voters
 
-    def getHistory(self, peer):
-        return self.api.messages.getHistory(
+    def get_history(self, peer):
+        return self.api.messages.get_history(
             v = self.v,
             peer_id = peer.id,
             start_message_id = -peer.last_read
         )
 
-    def markAsRead(self, peer):
-        return self.api.messages.markAsRead(
+    def mark_as_read(self, peer):
+        return self.api.messages.mark_as_read(
             v = self.v,
             peer_id = peer.id
         )
