@@ -4,6 +4,7 @@ from random import random
 from functools import reduce
 from taxcom_parser import get_items
 
+
 class Peer:
     def __init__(self, conv):
         self.id = conv["peer"]["id"]
@@ -12,6 +13,7 @@ class Peer:
 
 class Bot:
     v = "5.95"
+    DEFAULT_PATH = "Bot.data"
 
     def __init__(self, key):
         self.key = key
@@ -42,7 +44,10 @@ class Bot:
                 question = "Что ты используешь?" if first else "\u2800",
                 is_multiple = 1,
                 add_answers = json.dumps(tuple(map(
-                    lambda x: "{0}) {1} {2}".format(x[0], ' '.join(x[1][0].split()[:2]), x[1][1]),
+                    lambda x: "{0}) {1} {2}".format(
+                        x[0],
+                        ' '.join(x[1][0].split()[:2]), x[1][1]
+                    ),
                     zip(range(i + 1, i + 11), receipt[i:i + 10])
                 )))
             ))
@@ -51,14 +56,15 @@ class Bot:
         self.as_community()
         return polls
 
-    def save(self):
-        with open("output.txt", "w") as file:
-            print(", ".join(str(i) for i in self.cached_polls), file=file)
+    def save(self, stream=None):
+        if stream is None:
+            stream = open(self.DEFAULT_PATH, "w")
+        print(", ".join(str(i) for i in self.cached_polls), file=stream)
 
-    def load(self):
-        with open("output.txt") as file:
-            for line in file:
-                self.cached_polls = map(int, line.split(', '))
+    def load(self, stream=None):
+        if stream is None:
+            stream = open(self.DEFAULT_PATH)
+        self.cached_polls = map(int, stream.readline().split(', '))
 
     def process_receipt(self, fn, sum):
         receipt = get_items(fn, sum)
@@ -70,32 +76,39 @@ class Bot:
                 lm = x["last_message"]
                 p = Peer(conv)
                 for poll in polls:
-                    self.send_attachment(p,
+                    self.send_attachment(
+                        p,
                         "poll{owner_id}_{id}".format(**poll)
                     )
-                self.markAsRead(p)
+                self.mark_as_read(p)
         self.cached_polls = [poll["id"] for poll in polls]
 
     def get_answers(self):
-        self.as_user()
         if self.cached_polls is not None:
-            answers = reduce(lambda x, id: x + self.api.polls.getById(
-                v = self.v,
-                poll_id = id
-            )["answers"], self.cached_polls, [])
-        self.as_community()
-        return answers
+            self.as_user()
+            voters = []
+            for poll in self.cached_polls:
+                answers = self.api.polls.getById(
+                    v = self.v,
+                    poll_id = poll
+                )["answers"]
+                voters += self.api.polls.getVoters(
+                    v = self.v,
+                    poll_id = poll,
+                    answer_ids = ','.join(str(x["id"]) for x in answers)
+                )
+            self.as_community()
+            return voters
 
-
-    def getHistory(self, peer):
-        return self.api.messages.getHistory(
+    def get_history(self, peer):
+        return self.api.messages.get_history(
             v = self.v,
             peer_id = peer.id,
             start_message_id = -peer.last_read
         )
 
-    def markAsRead(self, peer):
-        return self.api.messages.markAsRead(
+    def mark_as_read(self, peer):
+        return self.api.messages.mark_as_read(
             v = self.v,
             peer_id = peer.id
         )

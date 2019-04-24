@@ -2,7 +2,10 @@ import requests
 
 
 def get_items(fiscal_id, receipt_sum):
-    url = "https://receipt.taxcom.ru/v01/show?fp={}&s={}".format(fiscal_id, receipt_sum)
+    url = "https://receipt.taxcom.ru/v01/show?fp={}&s={}".format(
+        fiscal_id,
+        receipt_sum
+    )
     request = requests.get(url)
 
     if request.status_code == 404:
