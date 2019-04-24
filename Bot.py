@@ -77,15 +77,21 @@ class Bot:
         self.cached_polls = [poll["id"] for poll in polls]
 
     def get_answers(self):
-        self.as_user()
         if self.cached_polls is not None:
-            answers = reduce(lambda x, id: x + self.api.polls.getById(
-                v = self.v,
-                poll_id = id
-            )["answers"], self.cached_polls, [])
-        self.as_community()
-        return answers
-
+            self.as_user()
+            voters = []
+            for poll in self.cached_polls:
+                answers = self.api.polls.getById(
+                    v = self.v,
+                    poll_id = poll
+                )["answers"]
+                voters += self.api.polls.getVoters(
+                    v = self.v,
+                    poll_id = poll,
+                    answer_ids = ','.join(str(x["id"]) for x in answers)
+                )
+            self.as_community()
+            return voters
 
     def getHistory(self, peer):
         return self.api.messages.getHistory(
