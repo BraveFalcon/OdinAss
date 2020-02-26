@@ -1,0 +1,11 @@
+{
+    "users": [
+        {
+            "name": "Дмитрий",
+            "peer_id": 80766692,
+            "balance": 0.0,
+            "transactions": []
+        }
+    ],
+    "transactions": []
+}
