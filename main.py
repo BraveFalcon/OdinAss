@@ -171,6 +171,8 @@ class Group:
             while True:
                 self.idle()
                 time.sleep(1)
+        except KeyboardInterrupt:
+            pass
         except:
             raise
         finally:
