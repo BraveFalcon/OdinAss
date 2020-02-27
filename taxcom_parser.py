@@ -20,11 +20,19 @@ def get_items(fiscal_id, receipt_sum):
 
     items = []
     lines = content.split('\n')
-    for i in range(len(lines)):
+    i = 0
+
+    def __get_number(string):
+        return string[55:string[55:].find("/") + 54]
+
+    while i < len(lines):
         if lines[i].strip() == """<span class="value receipt-value-1030">""":
-            items.append([lines[i + 1].strip()])
-        if """<span class="value receipt-value-1043">""" in lines[i]:
-            begin = lines[i].find("\">") + 2
-            end = lines[i].find("</span>")
-            items[-1].append(Currency(lines[i][begin:end]))
+            name = lines[i + 1].strip()
+            quantity = __get_number(lines[i + 9])
+            price = __get_number(lines[i + 11])
+            cost = __get_number(lines[i + 14])
+            items.append([name + ': ' + quantity + " * " + price + " = ", Currency(cost)])
+            i += 49
+        else:
+            i += 1
     return items
