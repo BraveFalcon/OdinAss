@@ -43,15 +43,30 @@ class Transaction:
 
 
 class User:
-    HELP_MESSAGE = \
-'''
-Список доступных команд:
-1) Баланс -- узнать балансы пользователей группы
-2) Купил -- зарегистрировать покупку
-3) Чек -- загрузить чек
-
-Для получения более подробной информации о команде наберите: Помощь [команда]
-'''
+    HELP_MESSAGES = {'all': "Список доступных команд:\n"
+                            "1) Баланс -- узнать балансы пользователей группы\n"
+                            "2) Купил -- зарегистрировать покупку\n"
+                            "3) Чек -- загрузить чек\n\n"
+                            "Для получения более подробной информации о команде наберите: Помощь [команда]",
+                     'баланс': "С помощью этой команды можно узнать балансы всех пользователей вашей группы",
+                     'купил':  "С помощью этой команды можно зарегистрировать покупку. После введения необходимых данных"
+                               "вам и всем указанным потребителям будет выслан запрос на подтверждение покупки. "
+                               "Когда все участники подтвердят покупку, будет произведено обновление их балансов (стоимость "
+                               "покупки распределяется равномерно по потребителям). В случае отказа хотя бы одного участника "
+                               "покупка считается недействительной. Тогда необходимо устранить причину разногласий участников и "
+                               "заново ввести команду.\n\n"
+                               "Синтаксис:\n\n"
+                               "Купил [потреб. 1] [потреб. 2] ...\n"
+                               "[продукт 1] [стоимость]\n"
+                               "[продукт 2] [стоимость]\n"
+                               "...",
+                     "чек" : "С помощью этой команды можно загрузить чек. По введенным данным чек будет искаться в базе сайта "
+                             "receipt.taxcom.ru. В случае успеха продукты, указанные в чеке, будут отправлены вам в формате, "
+                             "подходящем для команды \"купил\"\n\n"
+                             "Синтаксис:\n\n"
+                             "1-ый вариант: Чек [ФПД] [сумма расчета]\n"
+                             "2-ой вариант: Чек [данные из QR-кода]"
+                     }
 
     def __init__(self, group, name, peer_id, balance = 0, transactions = []):
         self.group = group
@@ -77,29 +92,10 @@ class User:
 
         if not lines:
             pass
+        elif lines[0][0] == "помощь" and len(lines[0]) > 1:
+            self.send(self.HELP_MESSAGES[lines[0][1].lower()])
         elif lines[0][0] == "помощь":
-            self.send(self.HELP_MESSAGE)
-        elif lines[0][0] == "помощь" and lines[0][1].lower() == "баланс":
-            self.send("С помощью этой команды можно узнать балансы всех пользователей вашей группы")
-        elif lines[0][0] == "помощь" and lines[0][1].lower() == "купил":
-            self.send("С помощью этой команды можно зарегистрировать покупку. После введения необходимых данных"
-                      "вам и всем указанным потребителям будет выслан запрос на подтверждение покупки. "
-                      "Когда все участники подтвердят покупку, будет произведено обновление их балансов (стоимость"
-                      "покупки распределяется равномерно по потребителям). В случае отказа хотя бы одного участника "
-                      "покупка считается недействительной. Тогда необходимо устранить причину разногласий участников и "
-                      "заново ввести команду.\n\n"
-                      "Синтаксис:\n\n"
-                      "Купил [имя 1-ого потребителя] [имя 2-ого потребителя] ...\n"
-                      "[название 1-ого продукта] [стоимость 1-ого продукта]\n"
-                      "[название 2-ого продукта] [стоимость 2-ого продукта]\n"
-                      "...")
-        elif lines[0][0] == "помощь" and lines[0][1].lower() == "чек":
-            self.send("С помощью этой команды можно загрузить чек. По введенным данным чек будет искаться в базе сайта "
-                      "receipt.taxcom.ru. В случае успеха продукты, указанные в чеке, будут отправлены вам в формате,"
-                      "подходящем для команды \"купил\"\n\n"
-                      "Синтаксис:\n\n"
-                      "1-ый вариант) Чек [ФПД] [сумма расчета]\n"
-                      "2-ой вариант) Чек [данные из QR-кода]")
+            self.send(self.HELP_MESSAGES['all'])
         elif lines[0][0] == "купил":
             consumers = lines[0][1:] #TODO: ask for consumers
             products = [Product(' '.join(line[:-1]), line[-1]) for line in lines[1:]] #TODO: ask for cost
@@ -107,12 +103,15 @@ class User:
         elif lines[0][0] == "чек":
             fiscal_id = lines[0][1]  # TODO: ask for fiscal_id
             receipt_sum = lines[0][2]  # TODO: ask for receipt_sum
-            products = [Product(' '.join(p[0].split(' ')[:2]), p[1]) for p in get_items(fiscal_id, receipt_sum)]
-            self.send('\n'.join(map(str, products)))
+            products = [Product(' '.join(p[0].split(' ')), p[1]) for p in get_items(fiscal_id, receipt_sum)]
+            if products:
+                self.send('\n'.join(map(str, products)))
+            else:
+                self.send("Чек не найден, проверьте введенные данные")
         elif lines[0][0] == "баланс":
             self.send(
                 "\n".join(
-                    "Баланс {}: {} ₽".format(user.name, user.balance)
+                    "Баланс {}: {}₽".format(user.name, user.balance)
                     for user in self.group.users_by_name.values()
                 )
             )
@@ -122,9 +121,9 @@ class User:
             elif lines[0][0] == "нет":
                 self.group.decline_transaction(self, self.transactions[-1])
             else:
-                self.send("Неизвестная команда при ответе на подтверждение транзакции\n\n" + self.HELP_MESSAGE)
+                self.send("Неизвестная команда при ответе на подтверждение транзакции\n\n" + self.HELP_MESSAGES['all'])
         else:
-            self.send("Неизвестная команда\n\n" + self.HELP_MESSAGE)
+            self.send("Неизвестная команда\n\n" + self.HELP_MESSAGES['all'])
 
     def send(self, message):
         return self.group.send(self, message)
@@ -216,7 +215,7 @@ class Group:
             try:
                 self.save(open("data_tmp.json", "w", encoding='utf-8'))
             except Exception:
-                print("Can't save data")
+                raise
             else:
                 os.rename("data_tmp.json", "data.json")
 
@@ -242,7 +241,7 @@ class Group:
             self.make_transaction(transaction)
             self.send(
                 transaction.purchaser,
-                "Покупка подтверждена\nВаш текущий баланс: {} ₽".format(transaction.purchaser.balance),
+                "Покупка подтверждена\nВаш текущий баланс: {}₽".format(transaction.purchaser.balance),
                 forward_messages = transaction.message_id
             )
 
@@ -260,7 +259,7 @@ class Group:
 
     def create_transaction(self, purchaser, products, consumers, message_id):
         consumers = [self.users_by_name[name] for name in consumers]
-        confirmers = consumers
+        confirmers = consumers.copy()
         if purchaser not in consumers:
             confirmers.append(purchaser)
         transaction = Transaction(purchaser, products, consumers, confirmers, message_id)
@@ -269,7 +268,7 @@ class Group:
         for user in confirmers:
             self.send(
                 user,
-                message = "Подтверждаете покупку? Всего {} ₽".format(transaction.value),
+                message = "Подтверждаете покупку? Всего {}₽".format(transaction.value),
                 forward_messages = message_id
             )
             user.transactions.append(transaction)
