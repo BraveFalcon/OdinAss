@@ -120,7 +120,7 @@ class User:
             if lines[0][0] == "да":
                 self.group.confirm_transaction(self, self.transactions.pop())
             elif lines[0][0] == "нет":
-                self.group.decline_transaction(self, self.transactions.pop())
+                self.group.decline_transaction(self, self.transactions[-1])
             else:
                 self.send("Неизвестная команда при ответе на подтверждение транзакции\n\n" + self.HELP_MESSAGE)
         else:
@@ -255,8 +255,6 @@ class Group:
                 "{} не подтвердил покупку".format(user.name),
                 forward_messages = transaction.message_id
             )
-            if consumer is not user:
-                consumer.transactions.remove(transaction) #TODO: what is it???
 
         del self.transactions_by_id[transaction.message_id]
 
