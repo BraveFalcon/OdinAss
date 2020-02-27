@@ -105,16 +105,10 @@ class User:
             products = [Product(' '.join(line[:-1]), line[-1]) for line in lines[1:]] #TODO: ask for cost
             self.group.create_transaction(self, products, consumers, message["id"])
         elif lines[0][0] == "чек":
-            consumers = lines[0][1:]
-            products = []
-            for line in lines[1:]:
-                fiscal_id = line[0] if len(line) > 0 else 0  # TODO: ask for fiscal_id
-                receipt_sum = line[1] if len(line) > 1 else 0  # TODO: ask for receipt_sum
-                products += [Product(' '.join(p[0].split(' ')[:2]), p[1]) for p in get_items(fiscal_id, receipt_sum)]
-            self.send(
-                "купил " + ' '.join(consumers) + '\n' +\
-                '\n'.join(map(str, products))
-            )
+            fiscal_id = lines[0][1]  # TODO: ask for fiscal_id
+            receipt_sum = lines[0][2]  # TODO: ask for receipt_sum
+            products = [Product(' '.join(p[0].split(' ')[:2]), p[1]) for p in get_items(fiscal_id, receipt_sum)]
+            self.send('\n'.join(map(str, products)))
         elif lines[0][0] == "баланс":
             self.send(
                 "\n".join(
