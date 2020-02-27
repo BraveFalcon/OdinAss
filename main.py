@@ -2,13 +2,23 @@ import time
 import vk
 import json
 import random
-from taxcom_parser import get_items
+from taxcom_parser import get_items, Currency
+
+
+def to_json(o):
+    return o.to_json()
 
 
 class Product:
     def __init__(self, name, cost):
         self.name = name
-        self.cost = cost
+        self.cost = Currency(cost)
+    
+    def __str__(self):
+        return "{} {}".format(self.name, self.cost)
+    
+    def to_json(self):
+        return [self.name, self.cost.to_json()]
     
 
 class Transaction:
@@ -16,14 +26,15 @@ class Transaction:
         self.purchaser = purchaser
         self.products = products
         self.value = sum(map(lambda x: x.cost, products))
+        print("Value: ", self.value)
         self.consumers = consumers
         self.confirmers = confirmers
         self.message_id = message_id
     
-    def to_dict(self):
+    def to_json(self):
         return {
             "purchaser": self.purchaser.peer_id,
-            "products": [[p.name, p.cost] for p in self.products],
+            "products": [p for p in self.products],
             "consumers": [u.peer_id for u in self.consumers],
             "confirmers": [u.peer_id for u in self.confirmers],
             "message_id": self.message_id
@@ -43,13 +54,13 @@ class User:
         self.group = group
         self.name = name
         self.peer_id = peer_id
-        self.balance = balance
+        self.balance = Currency(balance)
 
         if transactions is None:
             transactions = []
         self.transactions = transactions
     
-    def to_dict(self):
+    def to_json(self):
         return {
             "name": self.name,
             "peer_id": self.peer_id,
@@ -63,31 +74,24 @@ class User:
 
         if not lines:
             pass
-        elif self.transactions:
-            if lines[0][0] == "да":
-                self.group.confirm_transaction(self, self.transactions.pop())
-            elif lines[0][0] == "нет":
-                self.group.decline_transaction(self, self.transactions.pop())
-            else:
-                self.send("Неизвестная команда\n\n" + self.HELP_MESSAGE)
         elif lines[0][0] == "помощь":
             self.send(self.HELP_MESSAGE)
         elif lines[0][0] == "купил":
             consumers = lines[0][1:]
-            products = [Product(' '.join(line[:-1]), float(line[-1])) for line in lines[1:]]
+            products = [Product(' '.join(line[:-1]), line[-1]) for line in lines[1:]]
             self.group.begin_transaction(self, products, consumers, message["id"])
         elif lines[0][0] == "чеки":
             consumers = lines[0][1:]
             products = []
             for line in lines[1:]:
                 fiscal_id = line[0] if len(line) > 0 else 0  # TODO: ask for fiscal_id
-                receipt_sum = float(line[1]) if len(line) > 1 else 0  # TODO: ask for receipt_sum
+                receipt_sum = line[1] if len(line) > 1 else 0  # TODO: ask for receipt_sum
                 products += [Product(' '.join(p[0].split(' ')[:2]), p[1]) for p in get_items(fiscal_id, receipt_sum)]
-            message_id = self.send(
+            self.send(
                 "купил " + ' '.join(consumers) + '\n' +\
-                '\n'.join("{} {}".format(s.name, s.cost) for s in products)
+                '\n'.join(map(str, products))
             )
-            self.group.begin_transaction(self, products, consumers, message_id)
+            # self.group.begin_transaction(self, products, consumers, message_id)
         elif lines[0][0] == "баланс":
             self.send(
                 "\n".join(
@@ -95,6 +99,13 @@ class User:
                     for user in self.group.users_by_name.values()
                 )
             )
+        elif self.transactions:
+            if lines[0][0] == "да":
+                self.group.confirm_transaction(self, self.transactions.pop())
+            elif lines[0][0] == "нет":
+                self.group.decline_transaction(self, self.transactions.pop())
+            else:
+                self.send("Неизвестная команда2\n\n" + self.HELP_MESSAGE)
         else:
             self.send("Неизвестная команда\n\n" + self.HELP_MESSAGE)
     
@@ -110,6 +121,16 @@ class Group:
         self.users_by_name = dict()
         self.users_by_peer = dict()
         self.transactions_by_id = dict()
+    
+    def to_json(self):
+        return {
+            "users": [
+                u for u in self.users
+            ],
+            "transactions": [
+                t for t in self.transactions_by_id.values()
+            ]
+        }
     
     def load(self, stream):
         res = json.load(stream)
@@ -140,14 +161,13 @@ class Group:
             u.transactions = [self.transactions_by_id[t] for t in u.transactions]
     
     def save(self, stream):
-        json.dump({
-            "users": [
-                u.to_dict() for u in self.users
-            ],
-            "transactions": [
-                t.to_dict() for t in self.transactions_by_id.values()
-            ]
-        }, stream, ensure_ascii=False, indent=4)
+        json.dump(
+            self.to_json(),
+            stream,
+            ensure_ascii=False,
+            indent=4,
+            default=to_json
+        )
     
     def add_user(self, peer_id):
         usr = self.api.users.get(
@@ -188,8 +208,10 @@ class Group:
         )
     
     def make_transaction(self, transaction):
-        transaction.purchaser.balance += transaction.value
         value = transaction.value / len(transaction.consumers)
+        trv = value * len(transaction.consumers)
+        transaction.purchaser.balance += trv
+        print(trv, value, transaction.purchaser.balance)
         for user in transaction.consumers:
             user.balance -= value
     
@@ -199,13 +221,13 @@ class Group:
         if not transaction.confirmers:
             self.make_transaction(transaction)
 
-            for consumer in transaction.consumers:
-                self.send(
-                    consumer,
-                    "Транзакция подтверждена\nВаш текущий баланс: {}".format(consumer.balance),
-                    forward_messages = transaction.message_id
-                )
-                
+            # for consumer in transaction.consumers:
+            self.send(
+                transaction.purchaser,
+                "Транзакция подтверждена\nВаш текущий баланс: {}".format(transaction.purchaser.balance),
+                forward_messages = transaction.message_id
+            )
+            
             del self.transactions_by_id[transaction.message_id]
     
     def decline_transaction(self, user, transaction):
@@ -217,11 +239,13 @@ class Group:
             )
             if consumer is not user:
                 consumer.transactions.remove(transaction)
-            del self.transactions_by_id[transaction.message_id]
+
+        del self.transactions_by_id[transaction.message_id]
     
     def begin_transaction(self, purchaser, products, consumers, message_id):
         consumers = [self.users_by_name[name] for name in consumers]
         confirmers = { c for c in consumers }# if c is not purchaser }
+        confirmers.add(purchaser)
         transaction = Transaction(purchaser, products, consumers, confirmers, message_id)
         self.transactions_by_id[message_id] = transaction
 
@@ -250,7 +274,7 @@ class Group:
             history = self.api.messages.getHistory(
                 v = self.v,
                 peer_id = peer_id,
-                start_message_id = conv["in_read"] + 1,
+                start_message_id = max(conv["in_read"] + 1, conv["out_read"] + 1),
                 count = conv["unread_count"],
             )
             
@@ -261,6 +285,8 @@ class Group:
                 user = self.users_by_peer[peer_id]
             
             for h in history["items"]:
+                if h["from_id"] != user.peer_id:
+                    continue
                 user.answer(h)
             
             self.api.messages.markAsRead(

@@ -1,4 +1,5 @@
 import requests
+from Currency import Currency
 
 
 def get_items(fiscal_id, receipt_sum):
@@ -25,5 +26,5 @@ def get_items(fiscal_id, receipt_sum):
         if """<span class="value receipt-value-1043">""" in lines[i]:
             begin = lines[i].find("\">") + 2
             end = lines[i].find("</span>")
-            items[-1].append(float(lines[i][begin:end]))
+            items[-1].append(Currency(lines[i][begin:end]))
     return items
