@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 class Currency:
-    def __init__(self, value = 0):
+    def __init__(self, value = 0.0):
         if isinstance(value, str):
             value = Decimal(value)
         elif isinstance(value, Currency):
@@ -10,7 +10,8 @@ class Currency:
         self.cents = int(value * 100)
     
     def to_json(self):
-        return "{}.{:0>2}".format(self.cents // 100, self.cents % 100)
+        #return "{}.{:0>2}".format(self.cents // 100, self.cents % 100)
+        return "%.2f" % (self.cents / 100)
     
     def to_number(self):
         return self.cents / 100
@@ -31,11 +32,15 @@ class Currency:
         self.cents += other.cents
         self.cents = int(self.cents)
         return self
-    
+
+    def __neg__(self):
+        res = Currency()
+        res.cents = - self.cents
+        return res
+
     def __sub__(self, other):
         other = Currency(other)
         other.cents = self.cents - other.cents
-        other.cents = int(other.cents)
         return other
     
     def __rsub__(self, other):
@@ -100,7 +105,9 @@ class Currency:
 
 
 def test():
-    pass
+    x = Currency(1.05)
+    y = Currency(0.5)
+    print(y - x)
 
 
 if __name__ == "__main__":
