@@ -2,6 +2,7 @@ import time
 import vk
 import json
 import random
+import os
 from taxcom_parser import get_items, Currency
 
 
@@ -195,7 +196,12 @@ class Group:
         except:
             raise
         finally:
-            self.save(open("data.json", "w", encoding='utf-8')) #TODO: сохранять сначала во временный файл (ошибки записи)
+            try:
+                self.save(open("data_tmp.json", "w", encoding='utf-8'))
+            except Exception:
+                print("Can't save data")
+            else:
+                os.rename("data_tmp.json", "data.json")
     
     def send(self, user, message, *args, **kwargs):
         return self.api.messages.send(
