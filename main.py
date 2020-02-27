@@ -45,10 +45,10 @@ class User:
     HELP_MESSAGE = \
 '''
 Список доступных команд:
-1) помощь -- показать это сообщение
-2) купил -- зарегистрировать единичную покупку
-3) чеки -- загрузить чеки
-'''
+1) Баланс -- узнать балансы пользователей группы
+2) Купил -- зарегистрировать покупку
+3) Чек -- загрузить чек
+''' #TODO: help for all commands
 
     def __init__(self, group, name, peer_id, balance = 0, transactions = []):
         self.group = group
@@ -77,10 +77,10 @@ class User:
         elif lines[0][0] == "помощь":
             self.send(self.HELP_MESSAGE)
         elif lines[0][0] == "купил":
-            consumers = lines[0][1:]
-            products = [Product(' '.join(line[:-1]), line[-1]) for line in lines[1:]]
-            self.group.begin_transaction(self, products, consumers, message["id"])
-        elif lines[0][0] == "чеки":
+            consumers = lines[0][1:] #TODO: ask for consumers
+            products = [Product(' '.join(line[:-1]), line[-1]) for line in lines[1:]] #TODO: ask for cost
+            self.group.create_transaction(self, products, consumers, message["id"])
+        elif lines[0][0] == "чек":
             consumers = lines[0][1:]
             products = []
             for line in lines[1:]:
@@ -91,21 +91,20 @@ class User:
                 "купил " + ' '.join(consumers) + '\n' +\
                 '\n'.join(map(str, products))
             )
-            # self.group.begin_transaction(self, products, consumers, message_id)
         elif lines[0][0] == "баланс":
             self.send(
                 "\n".join(
-                    "Баланс {}: {}".format(user.name, user.balance)
+                    "Баланс {}: {} ₽".format(user.name, user.balance)
                     for user in self.group.users_by_name.values()
                 )
             )
-        elif self.transactions:
+        elif self.transactions: #TODO: пересылка сообщений при ответе на подтверждения, кроме последнего
             if lines[0][0] == "да":
                 self.group.confirm_transaction(self, self.transactions.pop())
             elif lines[0][0] == "нет":
                 self.group.decline_transaction(self, self.transactions.pop())
             else:
-                self.send("Неизвестная команда2\n\n" + self.HELP_MESSAGE)
+                self.send("Неизвестная команда при ответе на подтверждение транзакции\n\n" + self.HELP_MESSAGE)
         else:
             self.send("Неизвестная команда\n\n" + self.HELP_MESSAGE)
     
@@ -116,7 +115,7 @@ class Group:
     def __init__(self):
         self.session = vk.Session(access_token=open("key.txt").read().strip())
         self.api = vk.API(self.session)
-        self.v = "5.103"
+        self.vk_version = "5.103"
         self.users = []
         self.users_by_name = dict()
         self.users_by_peer = dict()
@@ -171,7 +170,7 @@ class Group:
     
     def add_user(self, peer_id):
         usr = self.api.users.get(
-            v = self.v,
+            v = self.vk_version,
             user_id = peer_id
         )
         user = User(self, usr[0]["first_name"], peer_id)
@@ -196,11 +195,11 @@ class Group:
         except:
             raise
         finally:
-            self.save(open("data.json", "w", encoding='utf-8'))
+            self.save(open("data.json", "w", encoding='utf-8')) #TODO: сохранять сначала во временный файл (ошибки записи)
     
     def send(self, user, message, *args, **kwargs):
         return self.api.messages.send(
-            v = self.v,
+            v = self.vk_version,
             peer_id = user.peer_id,
             random_id = random.random(),
             message = message,
@@ -208,61 +207,55 @@ class Group:
         )
     
     def make_transaction(self, transaction):
-        value = transaction.value / len(transaction.consumers)
-        trv = value * len(transaction.consumers)
-        transaction.purchaser.balance += trv
-        print(trv, value, transaction.purchaser.balance)
+        val_per_usr = transaction.value / len(transaction.consumers)
+        transaction.purchaser.balance += val_per_usr * len(transaction.consumers)
         for user in transaction.consumers:
-            user.balance -= value
+            user.balance -= val_per_usr
     
     def confirm_transaction(self, user, transaction):
         transaction.confirmers.remove(user)
 
         if not transaction.confirmers:
             self.make_transaction(transaction)
-
-            # for consumer in transaction.consumers:
             self.send(
                 transaction.purchaser,
-                "Транзакция подтверждена\nВаш текущий баланс: {}".format(transaction.purchaser.balance),
+                "Покупка подтверждена\nВаш текущий баланс: {} ₽".format(transaction.purchaser.balance),
                 forward_messages = transaction.message_id
             )
             
             del self.transactions_by_id[transaction.message_id]
     
     def decline_transaction(self, user, transaction):
-        for consumer in transaction.consumers:
+        for consumer in transaction.consumers: #TODO: what will happen if purchaser is not consumer?
             self.send(
                 consumer,
-                "{} отменил транзакцию".format(user.name),
+                "{} не подтвердил покупку".format(user.name),
                 forward_messages = transaction.message_id
             )
             if consumer is not user:
-                consumer.transactions.remove(transaction)
+                consumer.transactions.remove(transaction) #TODO: what is it???
 
         del self.transactions_by_id[transaction.message_id]
     
-    def begin_transaction(self, purchaser, products, consumers, message_id):
+    def create_transaction(self, purchaser, products, consumers, message_id):
         consumers = [self.users_by_name[name] for name in consumers]
-        confirmers = { c for c in consumers }# if c is not purchaser }
-        confirmers.add(purchaser)
+        confirmers = consumers
+        if purchaser not in consumers:
+            confirmers.append(purchaser)
         transaction = Transaction(purchaser, products, consumers, confirmers, message_id)
         self.transactions_by_id[message_id] = transaction
 
         for user in confirmers:
             self.send(
                 user,
-                message = "Подтверждаете транзакцию? Всего: {}".format(transaction.value),
+                message = "Подтверждаете покупку? Всего {} ₽".format(transaction.value),
                 forward_messages = message_id
             )
             user.transactions.append(transaction)
-        
-        if not confirmers:
-            self.make_transaction(transaction)
     
     def idle(self):
         result = self.api.messages.getConversations(
-            v = self.v,
+            v = self.vk_version,
             filter = "unread"
         )
         if result["count"] == 0:
@@ -272,7 +265,7 @@ class Group:
             peer_id = conv["peer"]["id"]
 
             history = self.api.messages.getHistory(
-                v = self.v,
+                v = self.vk_version,
                 peer_id = peer_id,
                 start_message_id = max(conv["in_read"] + 1, conv["out_read"] + 1),
                 count = conv["unread_count"],
@@ -290,7 +283,7 @@ class Group:
                 user.answer(h)
             
             self.api.messages.markAsRead(
-                v = self.v,
+                v = self.vk_version,
                 peer_id = peer_id
             )
 
