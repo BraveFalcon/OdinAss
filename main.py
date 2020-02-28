@@ -33,10 +33,10 @@ class Transaction:
 
     def to_json(self):
         return {
-            "purchaser": self.purchaser.peer_id,
+            "purchaser": self.purchaser.id,
             "products": [p for p in self.products],
-            "consumers": [u.peer_id for u in self.consumers],
-            "confirmers": [u.peer_id for u in self.confirmers],
+            "consumers": [u.id for u in self.consumers],
+            "confirmers": [u.id for u in self.confirmers],
             "message_id": self.message_id
         }
 
@@ -68,22 +68,18 @@ class User:
                              "2-ой вариант: Чек [данные из QR-кода]"
                      }
 
-    def __init__(self, group, name, peer_id, balance = 0, transactions = []):
+    def __init__(self, group, name, peer_id, balance = 0):
         self.group = group
         self.name = name
-        self.peer_id = peer_id
+        self.id = peer_id
         self.balance = Currency(balance)
 
-        if transactions is None:
-            transactions = []
-        self.transactions = transactions
 
     def to_json(self):
         return {
             "name": self.name,
-            "peer_id": self.peer_id,
-            "balance": self.balance,
-            "transactions": [t.message_id for t in self.transactions]
+            "id": self.id,
+            "balance": self.balance
         }
 
     def answer(self, message):
@@ -135,13 +131,19 @@ class User:
                     for user in self.group.users_by_name.values()
                 )
             )
-        elif self.transactions: #TODO: пересылка сообщений при ответе на подтверждения, кроме последнего
-            if lines[0][0] == "да":
-                self.group.confirm_transaction(self, self.transactions.pop())
-            elif lines[0][0] == "нет":
-                self.group.decline_transaction(self, self.transactions[-1])
+        elif lines[0][0] == "да" or lines[0][0] == "нет":
+            if message['reply_message']['from_id'] != self.id and "Подтверждаете покупку?" in message['reply_message']['text']:
+                transaction_id = message['reply_message']['fwd_messages'][0]['id']
+                try:
+                    if lines[0][0] == "да":
+                        self.group.confirm_transaction(self, transaction_id)
+                    elif lines[0][0] == "нет":
+                        self.group.decline_transaction(self, transaction_id)
+                except KeyError:
+                    self.send("Покупка уже завершена")
             else:
-                self.send("Неизвестная команда при ответе на подтверждение транзакции\n\n" + self.HELP_MESSAGES['all'])
+                self.send("Неизвестная команда. Если вы хотите ответить на вопрос, который не является последним"
+                          " сообщением, то необходимо использовать функцию вк \"ответить\"")
         else:
             self.send("Неизвестная команда")
             self.send(self.HELP_MESSAGES['all'])
@@ -156,7 +158,7 @@ class Group:
         self.vk_version = "5.103"
         self.users = []
         self.users_by_name = dict()
-        self.users_by_peer = dict()
+        self.users_by_id = dict()
         self.transactions_by_id = dict()
 
     def to_json(self):
@@ -176,26 +178,23 @@ class Group:
             u = User(
                 self,
                 u["name"],
-                u["peer_id"],
-                u["balance"],
-                u["transactions"]
+                u["id"],
+                u["balance"]
             )
             self.users.append(u)
             self.users_by_name[u.name] = u
-            self.users_by_peer[u.peer_id] = u
+            self.users_by_id[u.id] = u
 
         for t in res["transactions"]:
             t = Transaction(
-                self.users_by_peer[t["purchaser"]],
+                self.users_by_id[t["purchaser"]],
                 [Product(p[0], p[1]) for p in t["products"]],
-                [self.users_by_peer[peer_id] for peer_id in t["consumers"]],
-                {self.users_by_peer[peer_id] for peer_id in t["confirmers"]},
+                [self.users_by_id[id] for id in t["consumers"]],
+                {self.users_by_id[id] for id in t["confirmers"]},
                 t["message_id"]
             )
             self.transactions_by_id[t.message_id] = t
 
-        for u in self.users:
-            u.transactions = [self.transactions_by_id[t] for t in u.transactions]
 
     def save(self, stream):
         json.dump(
@@ -215,7 +214,7 @@ class Group:
 
         self.users.append(user)
         self.users_by_name[user.name] = user
-        self.users_by_peer[peer_id] = user
+        self.users_by_id[peer_id] = user
 
         return user
 
@@ -243,7 +242,7 @@ class Group:
     def send(self, user, message, *args, **kwargs):
         return self.api.messages.send(
             v = self.vk_version,
-            peer_id = user.peer_id,
+            peer_id = user.id,
             random_id = random.random(),
             message = message,
             *args, **kwargs
@@ -255,27 +254,34 @@ class Group:
         for user in transaction.consumers:
             user.balance -= val_per_usr
 
-    def confirm_transaction(self, user, transaction):
+    def confirm_transaction(self, user, transaction_id):
+        transaction = self.transactions_by_id[transaction_id]
         transaction.confirmers.remove(user)
 
         if not transaction.confirmers:
             self.make_transaction(transaction)
             self.send(
                 transaction.purchaser,
-                "Покупка подтверждена\nВаш текущий баланс: {}₽".format(transaction.purchaser.balance),
+                "Покупка подтверждена\n",
                 forward_messages = transaction.message_id
             )
-
+            self.send(
+                transaction.purchaser,
+                "\n".join(
+                    "Баланс {}: {}₽".format(user.name, user.balance)
+                    for user in self.users_by_name.values()
+                )
+            )
             del self.transactions_by_id[transaction.message_id]
 
-    def decline_transaction(self, user, transaction):
+    def decline_transaction(self, user, transaction_id):
+        transaction = self.transactions_by_id[transaction_id]
         for consumer in transaction.consumers:
             self.send(
                 consumer,
                 "{} не подтвердил покупку".format(user.name),
                 forward_messages = transaction.message_id
             )
-            consumer.transactions.remove(transaction)
         if transaction.purchaser not in transaction.consumers:
             self.send(
                 transaction.purchaser,
@@ -285,7 +291,12 @@ class Group:
         del self.transactions_by_id[transaction.message_id]
 
     def create_transaction(self, purchaser, products, consumers, message_id):
-        consumers = [self.users_by_name[name] for name in consumers]
+        for i in range(len(consumers)):
+            if consumers[i] in self.users_by_name:
+                consumers[i] = self.users_by_name[consumers[i]]
+            else:
+                purchaser.send("Пользователя с именем \"%s\" нет в вашей группе" % consumers[i])
+                return
         confirmers = consumers.copy()
         if purchaser not in consumers:
             confirmers.append(purchaser)
@@ -298,7 +309,6 @@ class Group:
                 message = "Подтверждаете покупку? Всего {}₽".format(transaction.value),
                 forward_messages = message_id
             )
-            user.transactions.append(transaction)
 
     def idle(self):
         result = self.api.messages.getConversations(
@@ -315,19 +325,25 @@ class Group:
                 v = self.vk_version,
                 peer_id = peer_id,
                 start_message_id = max(conv["in_read"] + 1, conv["out_read"] + 1),
-                count = conv["unread_count"],
+                count = conv["unread_count"] + 1,
             )
 
             user = None
-            if peer_id not in self.users_by_peer:
+            if peer_id not in self.users_by_id:
                 user = self.add_user(peer_id)
             else:
-                user = self.users_by_peer[peer_id]
+                user = self.users_by_id[peer_id]
 
-            for h in history["items"]:
-                if h["from_id"] != user.peer_id:
-                    continue
-                user.answer(h)
+            messages = history['items'][::-1]
+            for i in range(1, len(messages)):
+                if 'reply_message' not in messages[i]:
+                    messages[i]['reply_message'] = messages[i-1]
+                else:
+                    messages[i]['reply_message'] = self.api.messages.getById(
+                        v = self.vk_version,
+                        message_ids = [messages[i]['reply_message']['id']]
+                    )['items'][0]
+                user.answer(messages[i])
 
             self.api.messages.markAsRead(
                 v = self.vk_version,
