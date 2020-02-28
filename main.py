@@ -27,7 +27,6 @@ class Transaction:
         self.purchaser = purchaser
         self.products = products
         self.value = sum(map(lambda x: x.cost, products))
-        print("Value: ", self.value)
         self.consumers = consumers
         self.confirmers = confirmers
         self.message_id = message_id
@@ -48,6 +47,7 @@ class User:
                             "2) Купил -- зарегистрировать покупку\n"
                             "3) Чек -- загрузить чек\n\n"
                             "Для получения более подробной информации о команде наберите: Помощь [команда]",
+                     'error': "Неверный синтаксис команды",
                      'баланс': "С помощью этой команды можно узнать балансы всех пользователей вашей группы",
                      'купил':  "С помощью этой команды можно зарегистрировать покупку. После введения необходимых данных"
                                "вам и всем указанным потребителям будет выслан запрос на подтверждение покупки. "
@@ -97,13 +97,33 @@ class User:
         elif lines[0][0] == "помощь":
             self.send(self.HELP_MESSAGES['all'])
         elif lines[0][0] == "купил":
-            consumers = lines[0][1:] #TODO: ask for consumers
-            products = [Product(' '.join(line[:-1]), line[-1]) for line in lines[1:]] #TODO: ask for cost
+            if len(lines[0]) == 1:
+                self.send(self.HELP_MESSAGES['error'] + ": не указаны потребители")
+                return
+            consumers = lines[0][1:]
+            if len(lines) == 1:
+                self.send(self.HELP_MESSAGES['error'] + ": не указаны продукты")
+                return
+            products = []
+            for line in lines[1:]:
+                try:
+                    products.append(Product(' '.join(line[:-1]), line[-1]))
+                except:
+                    self.send(self.HELP_MESSAGES['error'] + ": ошибка в продукте \"%s\"" % ' '.join(line))
+                    return
+
             self.group.create_transaction(self, products, consumers, message["id"])
         elif lines[0][0] == "чек":
-            fiscal_id = lines[0][1]  # TODO: ask for fiscal_id
-            receipt_sum = lines[0][2]  # TODO: ask for receipt_sum
-            products = [Product(' '.join(p[0].split(' ')), p[1]) for p in get_items(fiscal_id, receipt_sum)]
+            if len(lines[0]) == 3:
+                fiscal_id = lines[0][1]
+                receipt_sum = lines[0][2]
+                qr_data = "&s=%s&fp=%s" % (receipt_sum, fiscal_id)
+            elif len(lines[0]) == 2:
+                qr_data = lines[0][1]
+            else:
+                self.send(self.HELP_MESSAGES['error'])
+                return
+            products = [Product(' '.join(p[0].split(' ')), p[1]) for p in get_items(qr_data)]
             if products:
                 self.send('\n'.join(map(str, products)))
             else:
@@ -123,7 +143,8 @@ class User:
             else:
                 self.send("Неизвестная команда при ответе на подтверждение транзакции\n\n" + self.HELP_MESSAGES['all'])
         else:
-            self.send("Неизвестная команда\n\n" + self.HELP_MESSAGES['all'])
+            self.send("Неизвестная команда")
+            self.send(self.HELP_MESSAGES['all'])
 
     def send(self, message):
         return self.group.send(self, message)
@@ -248,13 +269,19 @@ class Group:
             del self.transactions_by_id[transaction.message_id]
 
     def decline_transaction(self, user, transaction):
-        for consumer in transaction.consumers: #TODO: what will happen if purchaser is not consumer?
+        for consumer in transaction.consumers:
             self.send(
                 consumer,
                 "{} не подтвердил покупку".format(user.name),
                 forward_messages = transaction.message_id
             )
-
+            consumer.transactions.remove(transaction)
+        if transaction.purchaser not in transaction.consumers:
+            self.send(
+                transaction.purchaser,
+                "{} не подтвердил покупку".format(user.name),
+                forward_messages=transaction.message_id
+            )
         del self.transactions_by_id[transaction.message_id]
 
     def create_transaction(self, purchaser, products, consumers, message_id):

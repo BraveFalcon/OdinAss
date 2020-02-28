@@ -2,11 +2,8 @@ import requests
 from Currency import Currency
 
 
-def get_items(fiscal_id, receipt_sum):
-    url = "https://receipt.taxcom.ru/v01/show?fp={}&s={}".format(
-        fiscal_id,
-        receipt_sum
-    )
+def get_items(qr_data):
+    url = "https://receipt.taxcom.ru/v01/show?" + qr_data[qr_data.find('&') + 1:]
     request = requests.get(url)
 
     if request.status_code == 404:
@@ -15,7 +12,6 @@ def get_items(fiscal_id, receipt_sum):
 
     content = request.content.decode("utf-8")
     if "Чек по указанным параметрам не найден" in content:
-        print("Receipt not found! Check the correctness of the entered data")
         return []
 
     items = []
