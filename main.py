@@ -49,7 +49,7 @@ class User:
                             "Для получения более подробной информации о команде наберите: Помощь [команда]",
                      'error': "Неверный синтаксис команды",
                      'баланс': "С помощью этой команды можно узнать балансы всех пользователей вашей группы",
-                     'купил':  "С помощью этой команды можно зарегистрировать покупку. После введения необходимых данных"
+                     'купил':  "С помощью этой команды можно зарегистрировать покупку. После введения необходимых данных "
                                "вам и всем указанным потребителям будет выслан запрос на подтверждение покупки. "
                                "Когда все участники подтвердят покупку, будет произведено обновление их балансов (стоимость "
                                "покупки распределяется равномерно по потребителям). В случае отказа хотя бы одного участника "
@@ -89,16 +89,19 @@ class User:
         if not lines:
             pass
         elif lines[0][0] == "помощь" and len(lines[0]) > 1:
-            self.send(self.HELP_MESSAGES[lines[0][1].lower()])
+            if lines[0][1].lower() in self.HELP_MESSAGES:
+                self.send(self.HELP_MESSAGES[lines[0][1].lower()])
+            else:
+                self.send(self.HELP_MESSAGES['error'] + ": команды \"%s\" не существует" % lines[0][1].lower())
         elif lines[0][0] == "помощь":
             self.send(self.HELP_MESSAGES['all'])
         elif lines[0][0] == "купил":
             if len(lines[0]) == 1:
-                self.send(self.HELP_MESSAGES['error'] + ": не указаны потребители")
+                self.send(self.HELP_MESSAGES['error'] + "\nУкажите потребителей")
                 return
             consumers = lines[0][1:]
             if len(lines) == 1:
-                self.send(self.HELP_MESSAGES['error'] + ": не указаны продукты")
+                self.send(self.HELP_MESSAGES['error'] + "\nУкажите продукты")
                 return
             products = []
             for line in lines[1:]:
@@ -117,7 +120,7 @@ class User:
             elif len(lines[0]) == 2:
                 qr_data = lines[0][1]
             else:
-                self.send(self.HELP_MESSAGES['error'])
+                self.send(self.HELP_MESSAGES['error'] + ". Введите необходимые данные")
                 return
             products = [Product(' '.join(p[0].split(' ')), p[1]) for p in get_items(qr_data)]
             if products:
