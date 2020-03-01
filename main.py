@@ -232,8 +232,9 @@ class Group:
                 time.sleep(1)
         except KeyboardInterrupt:
             pass
-        except:
-            raise
+        except Exception as e:
+            self.send(self.users_by_name["Дима"], e)
+            self.send(self.users_by_name["Ваня"], e)
         finally:
             try:
                 self.save(open("data_tmp.json", "w", encoding='utf-8'))
