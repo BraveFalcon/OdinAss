@@ -229,7 +229,7 @@ class Group:
         try:
             while True:
                 self.idle()
-                time.sleep(1)
+                time.sleep(0.1)
         except KeyboardInterrupt:
             pass
         except Exception as e:
