@@ -229,12 +229,13 @@ class Group:
         try:
             while True:
                 self.idle()
-                time.sleep(0.1)
+                time.sleep(1)
         except KeyboardInterrupt:
             pass
         except Exception as e:
-            self.send(self.users_by_name["Дима"], e)
-            self.send(self.users_by_name["Ваня"], e)
+            self.send(self.users_by_id[211401321], e)
+            self.send(self.users_by_id[80766692], e)
+            raise e
         finally:
             try:
                 self.save(open("data_tmp.json", "w", encoding='utf-8'))
