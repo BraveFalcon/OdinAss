@@ -162,6 +162,7 @@ class Group:
         self.users = []
         self.users_by_name = dict()
         self.users_by_id = dict()
+        self.admins_id = [211401321, 80766692]
         self.transactions_by_id = dict()
 
     def to_json(self):
@@ -208,6 +209,14 @@ class Group:
             default=to_json
         )
 
+    def save_data(self):
+        try:
+            self.save(open("data_tmp.json", "w", encoding='utf-8'))
+        except Exception as e:
+            self.send_admins(e)
+        else:
+            os.rename("data_tmp.json", "data.json")
+
     def add_user(self, peer_id):
         usr = self.api.users.get(
             v = self.vk_version,
@@ -224,24 +233,19 @@ class Group:
     def run(self):
         try:
             self.load(open("data.json", encoding='utf-8'))
-        except:
-            pass
-        try:
-            while True:
-                self.idle()
-                time.sleep(0.1)
-        except KeyboardInterrupt:
-            pass
         except Exception as e:
-            self.send(self.users_by_name["Дима"], e)
-            self.send(self.users_by_name["Ваня"], e)
-        finally:
+            self.send_admins(e)
+        else:
             try:
-                self.save(open("data_tmp.json", "w", encoding='utf-8'))
-            except Exception:
-                raise
-            else:
-                os.rename("data_tmp.json", "data.json")
+                while True:
+                    self.idle()
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                pass
+            except Exception as e:
+                self.send_admins(e)
+            finally:
+                self.save_data()
 
     def send(self, user, message, *args, **kwargs):
         return self.api.messages.send(
@@ -252,11 +256,16 @@ class Group:
             *args, **kwargs
         )
 
+    def send_admins(self, message):
+        for id in self.admins_id:
+            self.send(self.users_by_id[id], message)
+
     def make_transaction(self, transaction):
         val_per_usr = transaction.value / len(transaction.consumers)
         transaction.purchaser.balance += val_per_usr * len(transaction.consumers)
         for user in transaction.consumers:
             user.balance -= val_per_usr
+        self.save_data()
 
     def confirm_transaction(self, user, transaction_id):
         transaction = self.transactions_by_id[transaction_id]
@@ -277,9 +286,13 @@ class Group:
                 )
             )
             del self.transactions_by_id[transaction.message_id]
+        else:
+            self.save_data()
 
     def decline_transaction(self, user, transaction_id):
         transaction = self.transactions_by_id[transaction_id]
+        del self.transactions_by_id[transaction_id]
+        self.save_data()
         for consumer in transaction.consumers:
             self.send(
                 consumer,
@@ -292,7 +305,7 @@ class Group:
                 "{} не подтвердил покупку".format(user.name),
                 forward_messages=transaction.message_id
             )
-        del self.transactions_by_id[transaction.message_id]
+
 
     def create_transaction(self, purchaser, products, consumers, message_id):
         for i in range(len(consumers)):
@@ -306,7 +319,7 @@ class Group:
             confirmers.append(purchaser)
         transaction = Transaction(purchaser, products, consumers, confirmers, message_id)
         self.transactions_by_id[message_id] = transaction
-
+        self.save_data()
         for user in confirmers:
             self.send(
                 user,
