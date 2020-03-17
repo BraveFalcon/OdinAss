@@ -1,5 +1,5 @@
 import requests
-from Currency import Currency
+from currency import Currency
 
 
 def get_items(qr_data):
