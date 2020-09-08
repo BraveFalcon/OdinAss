@@ -24,9 +24,9 @@ def get_items(qr_data):
     while i < len(lines):
         if lines[i].strip() == """<span class="value receipt-value-1030">""":
             name = lines[i + 1].strip()
-            quantity = __get_number(lines[i + 9])
-            price = __get_number(lines[i + 11])
-            cost = __get_number(lines[i + 14])
+            quantity = __get_number(lines[i + 10])
+            price = __get_number(lines[i + 12])
+            cost = __get_number(lines[i + 15])
             items.append([name + ': ' + quantity + " * " + price + " = ", Currency(cost)])
             i += 49
         else:
