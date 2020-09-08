@@ -72,6 +72,7 @@ class Group:
         except Exception as e:
             self.send_admins(e)
         else:
+            os.remove("data.json")
             os.rename("data_tmp.json", "data.json")
 
     def add_user(self, peer_id):
@@ -101,6 +102,7 @@ class Group:
                 pass
             except Exception as e:
                 self.send_admins(e)
+                raise e
             finally:
                 self.save_data()
 
@@ -143,8 +145,7 @@ class Group:
                 )
             )
             del self.transactions_by_id[transaction.message_id]
-        else:
-            self.save_data()
+        self.save_data()
 
     def decline_transaction(self, user, transaction_id):
         transaction = self.transactions_by_id[transaction_id]
