@@ -164,13 +164,19 @@ class Group:
                 forward_messages=transaction.message_id
             )
 
-    def create_transaction(self, purchaser, products, consumers, message_id):
-        for i in range(len(consumers)):
-            if consumers[i] in self.users_by_name:
-                consumers[i] = self.users_by_name[consumers[i]]
+    def create_transaction(self, purchaser, products, names, message_id):
+        consumers = []
+
+        for name in names:
+            if name in self.users_by_name:
+                consumers.append(self.users_by_name[name])
+            elif name in ("все", "всем"):
+                consumers = self.users
+                break
             else:
-                purchaser.send("Пользователя с именем \"%s\" нет в вашей группе" % consumers[i])
+                purchaser.send("Пользователя с именем \"%s\" нет в вашей группе" % name)
                 return
+
         confirmers = consumers.copy()
         if purchaser not in consumers:
             confirmers.append(purchaser)
@@ -180,7 +186,7 @@ class Group:
         for user in confirmers:
             self.send(
                 user,
-                message="Подтверждаете покупку? Всего {}₽".format(transaction.value),
+                message="Подтверждаете покупку? Всего {}₽ (да/нет)".format(transaction.value),
                 forward_messages=message_id
             )
 
