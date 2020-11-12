@@ -21,7 +21,7 @@ class Group:
         self.users = []
         self.users_by_name = dict()
         self.users_by_id = dict()
-        self.admins_id = [211401321, 80766692]
+        self.admins_id = [211401321]
         self.transactions_by_id = dict()
 
     def to_json(self):
@@ -102,6 +102,7 @@ class Group:
             except KeyboardInterrupt:
                 pass
             except Exception as e:
+                self.send_admins(type(e))
                 self.send_admins(e)
                 raise e
             finally:
@@ -129,6 +130,12 @@ class Group:
 
     def confirm_transaction(self, user, transaction_id):
         transaction = self.transactions_by_id[transaction_id]
+        if user not in transaction.confirmers:
+            self.send(
+                user,
+                "Покупка уже была подтверждена\n"
+            )
+            return
         transaction.confirmers.remove(user)
 
         if not transaction.confirmers:
@@ -199,6 +206,8 @@ class Group:
             )
         except requests.exceptions.ConnectionError:
             time.sleep(300)
+        except requests.exceptions.ReadTimeout:
+            time.sleep(600)
         else:
             if result["count"] == 0:
                 return

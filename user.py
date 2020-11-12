@@ -7,7 +7,8 @@ class User:
     HELP_MESSAGES = {'all': "Список доступных команд:\n"
                             "1) Баланс -- узнать балансы пользователей группы\n"
                             "2) Купил -- зарегистрировать покупку\n"
-                            "3) Чек -- загрузить чек\n\n"
+                            "3) Чек -- загрузить чек\n"
+                            "4) Подтвердить все -- подтверждение всех покупок\n\n"
                             "Для получения более подробной информации о команде наберите: Помощь [команда]",
                      'error': "Неверный синтаксис команды",
                      'баланс': "С помощью этой команды можно узнать балансы всех пользователей вашей группы",
@@ -27,7 +28,8 @@ class User:
                             "подходящем для команды \"купил\"\n\n"
                             "Синтаксис:\n\n"
                             "1-ый вариант: Чек [ФПД] [сумма расчета]\n"
-                            "2-ой вариант: Чек [данные из QR-кода]"
+                            "2-ой вариант: Чек [данные из QR-кода]",
+                     "подтвердить все": "Подтверждение всех покупок, в которых вы участвуете"
                      }
 
     def __init__(self, group, name, peer_id, balance=0):
@@ -50,12 +52,17 @@ class User:
         if not lines:
             pass
         elif lines[0][0] == "помощь" and len(lines[0]) > 1:
-            if lines[0][1].lower() in self.HELP_MESSAGES:
-                self.send(self.HELP_MESSAGES[lines[0][1].lower()])
+            if " ".join(lines[0][1:]).lower() in self.HELP_MESSAGES:
+                self.send(self.HELP_MESSAGES[" ".join(lines[0][1:]).lower()])
             else:
                 self.send(self.HELP_MESSAGES['error'] + ": команды \"%s\" не существует" % lines[0][1].lower())
         elif lines[0][0] == "помощь":
             self.send(self.HELP_MESSAGES['all'])
+        elif "подтвердить все" in " ".join(lines[0]):
+            for transaction_id, transaction in tuple(self.group.transactions_by_id.items()):
+                if self in transaction.confirmers:
+                    self.group.confirm_transaction(self, transaction_id)
+            self.send("Все покупки, в которых вы участвуете, успешно подтверждены\n")
         elif lines[0][0] == "купил":
             if len(lines[0]) == 1:
                 self.send(self.HELP_MESSAGES['error'] + "\nУкажите потребителей")
