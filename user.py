@@ -143,7 +143,7 @@ class User(Router):
         name = "подтвердить",
         description = "подтвердить покупки",
         help = "",  # TODO
-        aliases = ["yes", "д", "+", "-", "y"]
+        aliases = ["да", "д", "+", "yes", "y"]
     )
     def do_accept(self, message, all = None):
         if all is not None:
