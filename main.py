@@ -1,6 +1,8 @@
 from group import Group
+from bot import Bot
 import sys
 import os
+
 
 def lowpriority():
     """ Set the priority of the process to below-normal."""
@@ -20,13 +22,15 @@ def lowpriority():
     else:
         os.nice(19)
 
+
 def main():
     if len(sys.argv) != 2:
         print("Error. Write data directory")
         return
     lowpriority()
     os.chdir(sys.argv[1])
-    app = Group()
+    bot = Bot()
+    app = Group(bot)
     app.run()
 
 

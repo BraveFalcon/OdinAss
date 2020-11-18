@@ -14,10 +14,8 @@ def to_json(o):
 
 
 class Group:
-    def __init__(self):
-        self.session = vk.Session(access_token=open("key.txt").read().strip())
-        self.api = vk.API(self.session)
-        self.vk_version = "5.103"
+    def __init__(self, bot):
+        self.bot = bot
         self.users = []
         self.users_by_name = dict()
         self.users_by_id = dict()
@@ -77,10 +75,7 @@ class Group:
             os.rename("data_tmp.json", "data.json")
 
     def add_user(self, peer_id):
-        usr = self.api.users.get(
-            v=self.vk_version,
-            user_id=peer_id
-        )
+        usr = self.bot.get_user(peer_id)
         user = User(self, usr[0]["first_name"], peer_id)
 
         self.users.append(user)
@@ -109,8 +104,7 @@ class Group:
                 self.save_data()
 
     def send(self, user, message, *args, **kwargs):
-        return self.api.messages.send(
-            v=self.vk_version,
+        return self.bot.send(
             peer_id=user.id,
             random_id=random.random(),
             message=message,
@@ -200,10 +194,7 @@ class Group:
 
     def idle(self):
         try:
-            result = self.api.messages.getConversations(
-                v=self.vk_version,
-                filter="unread"
-            )
+            result = self.bot.get_conversations("unread")
         except requests.exceptions.ConnectionError:
             time.sleep(300)
         except requests.exceptions.ReadTimeout:
@@ -215,9 +206,8 @@ class Group:
                 conv = conv["conversation"]
                 peer_id = conv["peer"]["id"]
 
-                history = self.api.messages.getHistory(
-                    v=self.vk_version,
-                    peer_id=peer_id,
+                history = self.bot.get_history(
+                    peer_id,
                     start_message_id=max(conv["in_read"] + 1, conv["out_read"] + 1),
                     count=conv["unread_count"] + 1,
                 )
@@ -232,13 +222,9 @@ class Group:
                     if 'reply_message' not in messages[i]:
                         messages[i]['reply_message'] = messages[i - 1]
                     else:
-                        messages[i]['reply_message'] = self.api.messages.getById(
-                            v=self.vk_version,
-                            message_ids=[messages[i]['reply_message']['id']]
+                        messages[i]['reply_message'] = self.bot.get_messages(
+                            [messages[i]['reply_message']['id']]
                         )['items'][0]
                     user.answer(messages[i])
 
-                self.api.messages.markAsRead(
-                    v=self.vk_version,
-                    peer_id=peer_id
-                )
+                self.bot.mark_as_read(peer_id)
