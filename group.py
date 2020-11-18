@@ -13,9 +13,8 @@ def to_json(o):
     return o.to_json()
 
 
-class Group:
-    def __init__(self, bot):
-        self.bot = bot
+class BaseGroup:
+    def __init__(self):
         self.users = []
         self.users_by_name = dict()
         self.users_by_id = dict()
@@ -36,15 +35,12 @@ class Group:
         res = json.load(stream)
 
         for u in res["users"]:
-            u = User(
+            self.add_user(User(
                 self,
                 u["name"],
                 u["id"],
                 u["balance"]
-            )
-            self.users.append(u)
-            self.users_by_name[u.name] = u
-            self.users_by_id[u.id] = u
+            ))
 
         for t in res["transactions"]:
             t = Transaction(
@@ -55,6 +51,11 @@ class Group:
                 t["message_id"]
             )
             self.transactions_by_id[t.message_id] = t
+    
+    def add_user(self, user: User):
+        self.users.append(user)
+        self.users_by_name[user.name] = user
+        self.users_by_id[user.id] = user
 
     def save(self, stream):
         json.dump(
@@ -66,17 +67,75 @@ class Group:
         )
 
     def save_data(self):
+        with open("data_tmp.json", "w", encoding="utf-8") as file:
+            self.save(file)
+        os.remove("data.json")
+        os.rename("data_tmp.json", "data.json")
+    
+    def create_transaction(self, purchaser, products, names, message_id):
+        consumers = []
+
+        for name in names:
+            if name in self.users_by_name:
+                consumers.append(self.users_by_name[name])
+            elif name in ("все", "всем"):
+                consumers = self.users
+                break
+            else:
+                return  # TODO: add error raise and handle in subclass
+
+        confirmers = consumers.copy()
+        if purchaser not in consumers:
+            confirmers.append(purchaser)
+        transaction = Transaction(purchaser, products, consumers, confirmers, message_id)
+        self.transactions_by_id[message_id] = transaction
+        self.save_data()
+        return transaction
+    
+    def decline_transaction(self, user, transaction_id):
+        transaction = self.transactions_by_id[transaction_id]
+        del self.transactions_by_id[transaction_id]
+        self.save_data()
+        return transaction
+
+    def confirm_transaction(self, user, transaction_id):
+        transaction = self.transactions_by_id[transaction_id]
+        if user not in transaction.confirmers:
+            return  # TODO: add error raise and handle in subclass
+        transaction.confirmers.remove(user)
+
+        if not transaction.confirmers:
+            self.make_transaction(transaction)
+            del self.transactions_by_id[transaction.message_id]
+        self.save_data()
+        return transaction
+
+    def make_transaction(self, transaction):
+        val_per_usr = transaction.value / len(transaction.consumers)
+        transaction.purchaser.balance += val_per_usr * len(transaction.consumers)
+        for user in transaction.consumers:
+            user.balance -= val_per_usr
+        self.save_data()
+
+
+class Group(BaseGroup):
+    def __init__(self, bot):
+        super().__init__()
+        self.bot = bot
+    
+    def save_data(self):
         try:
-            self.save(open("data_tmp.json", "w", encoding='utf-8'))
+            super().save_data()
         except Exception as e:
             self.send_admins(e)
-        else:
-            os.remove("data.json")
-            os.rename("data_tmp.json", "data.json")
 
-    def add_user(self, peer_id):
-        usr = self.bot.get_user(peer_id)
-        user = User(self, usr[0]["first_name"], peer_id)
+    def add_user(self, user):
+        if isinstance(user, User):
+            return super().add_user(user)
+        
+        peer_id = user
+        user = self.bot.get_user(peer_id)
+        user = User(self, user[0]["first_name"], peer_id)
 
         self.users.append(user)
         self.users_by_name[user.name] = user
@@ -115,25 +174,10 @@ class Group:
         for id in self.admins_id:
             self.send(self.users_by_id[id], message)
 
-    def make_transaction(self, transaction):
-        val_per_usr = transaction.value / len(transaction.consumers)
-        transaction.purchaser.balance += val_per_usr * len(transaction.consumers)
-        for user in transaction.consumers:
-            user.balance -= val_per_usr
-        self.save_data()
-
     def confirm_transaction(self, user, transaction_id):
-        transaction = self.transactions_by_id[transaction_id]
-        if user not in transaction.confirmers:
-            self.send(
-                user,
-                "Покупка уже была подтверждена\n"
-            )
-            return
-        transaction.confirmers.remove(user)
+        transaction = super().confirm_transaction(user, transaction_id)
 
         if not transaction.confirmers:
-            self.make_transaction(transaction)
             self.send(
                 transaction.purchaser,
                 "Покупка подтверждена\n",
@@ -146,13 +190,9 @@ class Group:
                     for user in self.users_by_name.values()
                 )
             )
-            del self.transactions_by_id[transaction.message_id]
-        self.save_data()
 
     def decline_transaction(self, user, transaction_id):
-        transaction = self.transactions_by_id[transaction_id]
-        del self.transactions_by_id[transaction_id]
-        self.save_data()
+        transaction = super().decline_transaction(user, transaction_id)
         for consumer in transaction.consumers:
             self.send(
                 consumer,
@@ -167,25 +207,8 @@ class Group:
             )
 
     def create_transaction(self, purchaser, products, names, message_id):
-        consumers = []
-
-        for name in names:
-            if name in self.users_by_name:
-                consumers.append(self.users_by_name[name])
-            elif name in ("все", "всем"):
-                consumers = self.users
-                break
-            else:
-                purchaser.send("Пользователя с именем \"%s\" нет в вашей группе" % name)
-                return
-
-        confirmers = consumers.copy()
-        if purchaser not in consumers:
-            confirmers.append(purchaser)
-        transaction = Transaction(purchaser, products, consumers, confirmers, message_id)
-        self.transactions_by_id[message_id] = transaction
-        self.save_data()
-        for user in confirmers:
+        transaction = super().create_transaction(purchaser, products, names, message_id)
+        for user in transaction.confirmers:
             self.send(
                 user,
                 message="Подтверждаете покупку? Всего {}₽ (да/нет)".format(transaction.value),
