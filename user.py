@@ -1,37 +1,10 @@
 from currency import Currency
 from product import Product
 from taxcom_parser import get_items
+from route import route, Router
 
 
-class User:
-    HELP_MESSAGES = {'all': "Список доступных команд:\n"
-                            "1) Баланс -- узнать балансы пользователей группы\n"
-                            "2) Купил -- зарегистрировать покупку\n"
-                            "3) Чек -- загрузить чек\n"
-                            "4) Подтвердить все -- подтверждение всех покупок\n\n"
-                            "Для получения более подробной информации о команде наберите: Помощь [команда]",
-                     'error': "Неверный синтаксис команды",
-                     'баланс': "С помощью этой команды можно узнать балансы всех пользователей вашей группы",
-                     'купил': "С помощью этой команды можно зарегистрировать покупку. После введения необходимых данных "
-                              "вам и всем указанным потребителям будет выслан запрос на подтверждение покупки. "
-                              "Когда все участники подтвердят покупку, будет произведено обновление их балансов (стоимость "
-                              "покупки распределяется равномерно по потребителям). В случае отказа хотя бы одного участника "
-                              "покупка считается недействительной. Тогда необходимо устранить причину разногласий участников и "
-                              "заново ввести команду.\n\n"
-                              "Синтаксис:\n\n"
-                              "Купил [потреб. 1] [потреб. 2] | все ...\n"
-                              "[продукт 1] [стоимость]\n"
-                              "[продукт 2] [стоимость]\n"
-                              "...",
-                     "чек": "С помощью этой команды можно загрузить чек. По введенным данным чек будет искаться в базе сайта "
-                            "receipt.taxcom.ru. В случае успеха продукты, указанные в чеке, будут отправлены вам в формате, "
-                            "подходящем для команды \"купил\"\n\n"
-                            "Синтаксис:\n\n"
-                            "1-ый вариант: Чек [ФПД] [сумма расчета]\n"
-                            "2-ой вариант: Чек [данные из QR-кода]",
-                     "подтвердить все": "Подтверждение всех покупок, в которых вы участвуете"
-                     }
-
+class User(Router):
     def __init__(self, group, name, peer_id, balance=0):
         self.group = group
         self.name = name
@@ -46,79 +19,181 @@ class User:
         }
 
     def answer(self, message):
-        lines = [line.strip().split(' ') for line in message["text"].split('\n')]
-        lines[0][0] = lines[0][0].lower()
+        lines = [x.strip() for x in message["text"].split("\n")]
 
         if not lines:
-            pass
-        elif lines[0][0] == "помощь" and len(lines[0]) > 1:
-            if " ".join(lines[0][1:]).lower() in self.HELP_MESSAGES:
-                self.send(self.HELP_MESSAGES[" ".join(lines[0][1:]).lower()])
-            else:
-                self.send(self.HELP_MESSAGES['error'] + ": команды \"%s\" не существует" % lines[0][1].lower())
-        elif lines[0][0] == "помощь":
-            self.send(self.HELP_MESSAGES['all'])
-        elif "подтвердить все" in " ".join(lines[0]):
-            for transaction_id, transaction in tuple(self.group.transactions_by_id.items()):
-                if self in transaction.confirmers:
-                    self.group.confirm_transaction(self, transaction_id)
-            self.send("Все покупки, в которых вы участвуете, успешно подтверждены\n")
-        elif lines[0][0] == "купил":
-            if len(lines[0]) == 1:
-                self.send(self.HELP_MESSAGES['error'] + "\nУкажите потребителей")
-                return
-            consumers = lines[0][1:]
-            if len(lines) == 1:
-                self.send(self.HELP_MESSAGES['error'] + "\nУкажите продукты")
-                return
-            products = []
-            for line in lines[1:]:
-                try:
-                    products.append(Product(' '.join(line[:-1]), line[-1]))
-                except:
-                    self.send(self.HELP_MESSAGES['error'] + ": ошибка в продукте \"%s\"" % ' '.join(line))
-                    return
-
-            self.group.create_transaction(self, products, consumers, message["id"])
-        elif lines[0][0] == "чек":
-            if len(lines[0]) == 3:
-                fiscal_id = lines[0][1]
-                receipt_sum = lines[0][2]
-                qr_data = "&s=%s&fp=%s" % (receipt_sum, fiscal_id)
-            elif len(lines[0]) == 2:
-                qr_data = lines[0][1]
-            else:
-                self.send(self.HELP_MESSAGES['error'] + ". Введите необходимые данные")
-                return
-            products = [Product(' '.join(p[0].split(' ')), p[1]) for p in get_items(qr_data)]
-            if products:
-                self.send('\n'.join(map(str, products)))
-            else:
-                self.send("Чек не найден, проверьте введенные данные")
-        elif lines[0][0] == "баланс":
-            self.send(
-                "\n".join(
-                    "Баланс {}: {}₽".format(user.name, user.balance)
-                    for user in self.group.users_by_name.values()
-                )
-            )
-        elif lines[0][0] == "да" or lines[0][0] == "нет":
-            if message['reply_message']['from_id'] != self.id and "Подтверждаете покупку?" in message['reply_message'][
-                'text']:
-                transaction_id = message['reply_message']['fwd_messages'][0]['id']
-                try:
-                    if lines[0][0] == "да":
-                        self.group.confirm_transaction(self, transaction_id)
-                    elif lines[0][0] == "нет":
-                        self.group.decline_transaction(self, transaction_id)
-                except KeyError:
-                    self.send("Покупка уже завершена")
-            else:
-                self.send("Неизвестная команда. Если вы хотите ответить на вопрос, который не является последним"
-                          " сообщением, то необходимо использовать функцию вк \"ответить\"")
-        else:
+            return
+        
+        a = self.find_route(lines[0])
+        if a is None or len(a) < 2:
             self.send("Неизвестная команда")
-            self.send(self.HELP_MESSAGES['all'])
+            self.do_help()
+            return
+        route, line = a
+        if not line:
+            lines.pop(0)
+        else:
+            lines[0] = line
+        try:
+            route.func(self, message, *lines)
+        except TypeError:
+            self.error_wrong_syntax()
+    
+    def error_wrong_syntax(self, info = None):
+        msg = "Неверный синтаксис команды"
+        if info is not None:
+            msg += ":\n" + info
+        self.send(msg)
+
+    @route(
+        name = "помощь",
+        description = "получить список и синтаксис команд",
+        aliases = ["?"]
+    )
+    def do_help(self, message = None, command = None):
+        if not self.do_help.help:  # lazy auto help
+            msg = "Список доступных команд:\n"
+            for i, route in enumerate(self.routes, 1):
+                msg += "{0}) {1} -- {2}\n".format(i, route.name.capitalize(), route.description.capitalize())
+            msg += "\nДля получения более подробной информации о команде наберите: Помощь [команда]"
+            self.do_help.help = msg
+
+        if command is None:
+            return self.send(self.do_help.help)
+        
+        while command:
+            route, line = self.find_route(command)
+            if route is None or line is None:
+                return self.error_wrong_syntax("команды {} не существует".format(command))
+            
+            self.send(route.help)
+            command = line
+    
+    @route(
+        name = "баланс",
+        description = "узнать балансы пользователей группы",
+        help = "С помощью этой команды можно узнать балансы всех пользователей вашей группы",
+        aliases = ["$"]
+    )
+    def do_balance(self, message = None):
+        self.send(
+            "\n".join(
+                "Баланс {}: {}₽".format(user.name, user.balance)
+                for user in self.group.users_by_name.values()
+            )
+        )
+    
+    @route(
+        name = "купил",
+        description = "зарегистрировать покупку",
+        help =  "С помощью этой команды можно зарегистрировать покупку. После введения необходимых данных "
+                "вам и всем указанным потребителям будет выслан запрос на подтверждение покупки. "
+                "Когда все участники подтвердят покупку, будет произведено обновление их балансов (стоимость "
+                "покупки распределяется равномерно по потребителям). В случае отказа хотя бы одного участника "
+                "покупка считается недействительной. Тогда необходимо устранить причину разногласий участников и "
+                "заново ввести команду.\n\n"
+                "Синтаксис:\n\n"
+                "Купил [потреб. 1] [потреб. 2] | все ...\n"
+                "[продукт 1] [стоимость]\n"
+                "[продукт 2] [стоимость]\n"
+                "..."
+    )
+    def do_bought(self, message, consumers = None, *lines):
+        if consumers is None:
+            return self.error_wrong_syntax("Укажите потребителей")
+        if not lines:
+            return self.error_wrong_syntax("Укажите продукты")
+        consumers = consumers.split(' ')
+        products = []
+        for line in lines:
+            try:
+                products.append(Product(*line.rsplit(' ', 1)))
+            except:
+                return self.error_wrong_syntax("ошибка в продукте {}".format(repr(line)))
+
+        self.group.create_transaction(self, products, consumers, message["id"])
+    
+    @route(
+        name = "чек",
+        description = "загрузить чек",
+        help =  "С помощью этой команды можно загрузить чек. По введенным данным чек будет искаться в базе сайта "
+                "receipt.taxcom.ru. В случае успеха продукты, указанные в чеке, будут отправлены вам в формате, "
+                "подходящем для команды \"купил\"\n\n"
+                "Синтаксис:\n\n"
+                "1-ый вариант: Чек [ФПД] [сумма расчета]\n"
+                "2-ой вариант: Чек [данные из QR-кода]"
+    )
+    def do_recipe(self, message, check):
+        s = check.split(' ')
+        qr_data = None
+        if len(s) == 2:
+            fiscal_id, receipt_sum = s
+            qr_data = "&s={0}&fp={1}".format(receipt_sum, fiscal_id)
+        elif len(s) == 1:
+            qr_data = check
+        else:
+            return self.error_wrong_syntax("Введите необходимые данные")
+        products = [Product(' '.join(p[0].split(' ')), p[1]) for p in get_items(qr_data)]
+        if products:
+            self.send('\n'.join(map(str, products)))
+        else:
+            self.send("Чек не найден, проверьте введенные данные")
+    
+    @route(
+        name = "подтвердить",
+        description = "подтвердить покупки",
+        help = "",  # TODO
+        aliases = ["yes", "д", "+", "-", "y"]
+    )
+    def do_accept(self, message, all = None):
+        if all is not None:
+            if all in ("все", "всё"):
+                for transaction_id, transaction in tuple(self.group.transactions_by_id.items()):
+                    if self in transaction.confirmers:
+                        self.group.confirm_transaction(self, transaction_id)
+                self.send("Все покупки, в которых вы участвуете, успешно подтверждены")
+            else:
+                self.error_wrong_syntax()  # TODO
+            return
+        
+        if message['reply_message']['from_id'] != self.id and\
+                "Подтверждаете покупку?" in message['reply_message']['text']:
+            transaction_id = message['reply_message']['fwd_messages'][0]['id']
+            try:
+                self.group.confirm_transaction(self, transaction_id)
+            except KeyError:
+                self.send("Покупка уже завершена")
+        else:
+            self.send("Неизвестная команда. Если вы хотите ответить на вопрос, который не является последним"
+                        " сообщением, то необходимо использовать функцию вк \"ответить\"")
+    
+    @route(
+        name = "отменить",
+        description = "отменить покупки",
+        help = "",  # TODO
+        aliases = ["нет", "н", "no", "n", "-"]
+    )
+    def do_refuse(self, message, all = None):
+        if all is not None:
+            if all in ("все", "всё"):
+                for transaction_id, transaction in tuple(self.group.transactions_by_id.items()):
+                    if self in transaction.confirmers:
+                        self.group.decline_transaction(self, transaction_id)
+                self.send("Все покупки, в которых вы участвуете, отменены")
+            else:
+                self.error_wrong_syntax()  # TODO
+            return
+        
+        if message['reply_message']['from_id'] != self.id and\
+                "Подтверждаете покупку?" in message['reply_message']['text']:
+            transaction_id = message['reply_message']['fwd_messages'][0]['id']
+            try:
+                self.group.decline_transaction(self, transaction_id)
+            except KeyError:
+                self.send("Покупка уже завершена")
+        else:
+            self.send("Неизвестная команда. Если вы хотите ответить на вопрос, который не является последним"
+                        " сообщением, то необходимо использовать функцию вк \"ответить\"")
 
     def send(self, message):
         return self.group.send(self, message)
